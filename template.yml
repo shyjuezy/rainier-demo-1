@@ -1,0 +1,16 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform:
+  - AWS::Serverless-2016-10-31
+  - rpp-alksify
+
+Resources:
+  HelloWorldLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src
+      Handler: lambda.handler
+      Timeout: 300
+      MemorySize: 1024
+      Runtime: python3.9
+      FunctionName: "rpp-labor-ingest-shyju-helloworld2"
+      Role: arn:aws:iam::723760181230:role/acct-managed/rpp-labor-ingest-role
