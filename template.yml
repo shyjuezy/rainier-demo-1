@@ -3,14 +3,70 @@ Transform:
   - AWS::Serverless-2016-10-31
   - rpp-alksify
 
+Conditions:
+  alias: !Not [!Equals [!Ref AliasName, "latest"]]
+
+Parameters:
+  AliasName:
+    Type: String
+    Default: "latest"
+    Description: "Alias name for the resources"
+
 Resources:
+#  set a basic role for the lambda
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: !If [alias, !Sub "${AliasName}-demo-lambda-policy", "demo-lambda-policy"]
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*demo-lambda*"
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:PutItem"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:UpdateItem"
+                  - "dynamodb:DeleteItem"
+                  - "dynamodb:Scan"
+                  - "dynamodb:Query"
+                Resource: !Ref HelloWorldDynamoDB
+
   HelloWorldLambda:
     Type: AWS::Serverless::Function
     Properties:
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref HelloWorldDynamoDB
       CodeUri: ./src
       Handler: lambda.handler
       Timeout: 300
       MemorySize: 1024
       Runtime: python3.9
-      FunctionName: "rpp-labor-ingest-shyju-helloworld2"
-      Role: arn:aws:iam::723760181230:role/acct-managed/rpp-labor-ingest-role
+      FunctionName: "demo-lambda"
+      Role: !GetAtt LambdaRole.Arn
+
+  HelloWorldDynamoDB:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      TableName: !If [alias, !Sub "${AliasName}-demo-dynamodb", "demo-dynamodb"]
