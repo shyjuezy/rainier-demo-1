@@ -12,11 +12,17 @@ Parameters:
     Default: "latest"
     Description: "Alias name for the resources"
 
+  RppEventBus:
+    Description: Event bus for rpp
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/rpp-events/event-bridge"
+
 Resources:
 #  set a basic role for the lambda
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !If [alias, !Sub "${AliasName}-demo-lambda-role", "demo-lambda-role"]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -44,7 +50,60 @@ Resources:
                   - "dynamodb:DeleteItem"
                   - "dynamodb:Scan"
                   - "dynamodb:Query"
-                Resource: !Ref HelloWorldDynamoDB
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${HelloWorldDynamoDB}"
+              - Effect: Allow
+                Action:
+                  - ssm:GetParametersByPath
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+              - Effect: Allow
+                Action:
+                  - kinesis:DescribeStream
+                  - kinesis:DescribeStreamSummary
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:ListShards
+                  - kinesis:ListStreams
+                  - kinesis:SubscribeToShard
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                Resource:
+                  - !GetAtt HelloWorldDynamoDBKinesisStream.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                Resource:
+                  - !GetAtt HelloWorldDemoQueue.Arn
+
+  HelloWorldEventBridgeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !If [alias, !Sub "${AliasName}-demo-event-bridge-queue", "demo-event-bridge-queue"]
+      VisibilityTimeout: 300
+
+  HelloWorldEventBridgeQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref HelloWorldEventBridgeQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              "Service": "events.amazonaws.com"
+            Action:
+              - "sqs:SendMessage"
+              - "sqs:ReceiveMessage"
+            Resource: !GetAtt HelloWorldEventBridgeQueue.Arn
+
+  HelloWorldDemoQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !If [alias, !Sub "${AliasName}-demo-queue", "demo-queue"]
 
   HelloWorldLambda:
     Type: AWS::Serverless::Function
@@ -57,16 +116,94 @@ Resources:
       Timeout: 300
       MemorySize: 1024
       Runtime: python3.9
-      FunctionName: "demo-lambda"
+      FunctionName: !If [alias, !Sub "${AliasName}-demo-lambda", "demo-lambda"]
       Role: !GetAtt LambdaRole.Arn
 
   HelloWorldDynamoDB:
-    Type: AWS::Serverless::SimpleTable
+    Type: AWS::DynamoDB::Table
     Properties:
-      PrimaryKey:
-        Name: id
-        Type: String
+      AttributeDefinitions:
+        - AttributeName: "name"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "name"
+          KeyType: "HASH"
       ProvisionedThroughput:
         ReadCapacityUnits: 1
         WriteCapacityUnits: 1
       TableName: !If [alias, !Sub "${AliasName}-demo-dynamodb", "demo-dynamodb"]
+      KinesisStreamSpecification:
+        StreamArn: !GetAtt HelloWorldDynamoDBKinesisStream.Arn
+
+  HelloWorldDynamoDBKinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !If [alias, !Sub "${AliasName}-demo-kinesis-stream", "demo-kinesis-stream"]
+      ShardCount: 1
+
+  HelloWorldKinesisStreamProcessor:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src
+      Handler: kinesis_stream_processor.handler
+      Timeout: 300
+      MemorySize: 512
+      Runtime: python3.9
+      FunctionName: !If [alias, !Sub "${AliasName}-demo-kinesis-stream-processor", "demo-kinesis-stream-processor"]
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          QUEUE_URL: !GetAtt HelloWorldDemoQueue.Arn
+      Events:
+        HelloWorldDynamoDBKinesisStreamEvent:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt HelloWorldDynamoDBKinesisStream.Arn
+            BatchSize: 1
+            StartingPosition: TRIM_HORIZON
+
+  HelloWorldDynamoDBLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${HelloWorldLambda}"
+      RetentionInDays: 1
+
+  EventBridgeListenerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !If [alias, !Sub "${AliasName}-demo-event-rule", "demo-event-rule"]
+      Description: "EventBridge rule for demo"
+      EventBusName: 'default'
+      EventPattern:
+        source:
+          - "aws.appconfig"
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          requestParameters:
+            applicationId:
+              - "z2gsukd"
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt HelloWorldEventBridgeQueue.Arn
+          Id: "demo-event-listener"
+
+  EventBridgeListener:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src
+      Handler: event_bridge_handler.handler
+      Timeout: 300
+      MemorySize: 512
+      Runtime: python3.9
+      FunctionName: !If [alias, !Sub "${AliasName}-demo-event-listener", "demo-event-listener"]
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          RPP_EVENT_BUS: !Ref RppEventBus
+
+  EventBridgeListenerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${EventBridgeListener}"
+      RetentionInDays: 1
