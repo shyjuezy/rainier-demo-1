@@ -1,2 +1,4 @@
 .idea
 packaged-shyju-test-us-east-1.yml
+build/
+.python-version

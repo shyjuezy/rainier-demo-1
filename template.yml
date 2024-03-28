@@ -41,7 +41,7 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                 Resource:
-                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*demo-lambda*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*demo*"
               - Effect: "Allow"
                 Action:
                   - "dynamodb:PutItem"
@@ -111,7 +111,7 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref HelloWorldDynamoDB
-      CodeUri: ./src
+      CodeUri: ./build
       Handler: lambda.handler
       Timeout: 300
       MemorySize: 1024
@@ -144,7 +144,7 @@ Resources:
   HelloWorldKinesisStreamProcessor:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ./src
+      CodeUri: ./build
       Handler: kinesis_stream_processor.handler
       Timeout: 300
       MemorySize: 512
@@ -153,7 +153,7 @@ Resources:
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          QUEUE_URL: !GetAtt HelloWorldDemoQueue.Arn
+          QUEUE_URL: !Ref HelloWorldDemoQueue
       Events:
         HelloWorldDynamoDBKinesisStreamEvent:
           Type: Kinesis
@@ -191,7 +191,7 @@ Resources:
   EventBridgeListener:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ./src
+      CodeUri: ./build
       Handler: event_bridge_handler.handler
       Timeout: 300
       MemorySize: 512
