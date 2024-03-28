@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 result=$(aws sts get-caller-identity --output text --query 'Account') && export AWS_ACCOUNT=$result || { echo "could not get account ID"; exit 1; }
-pip install -r requirements.txt --upgrade --use-feature=fast-deps
+mkdir -p build
+cp -r src/* build/
+pip install -t build/ -r requirements.txt --upgrade --use-feature=fast-deps
 
 echo "===> Building src"
 
@@ -15,7 +17,7 @@ echo $AWS_ACCOUNT
 echo $SERVICE_NAME
 echo $REGIONS
 
-for REGION in ${REGIONS[@]}; do
+for REGION in "${REGIONS[@]}"; do
   echo "===> Packaging and deploy for $REGION"
   echo coxauto-rpp-$REGION-$AWS_ACCOUNT-temp
   OUTPUT_FILE=packaged-$SERVICE_NAME-$REGION.yml
